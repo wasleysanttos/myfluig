@@ -1,0 +1,78 @@
+function createDataset(fields, constraints, sortFields) {
+    var dataset = DatasetBuilder.newDataset();
+    dataset.addColumn("fileName");
+    dataset.addColumn("status");
+    dataset.addColumn("os");
+
+    try {
+        // Descobre o sistema operacional
+        var osName = java.lang.System.getProperty("os.name").toLowerCase();
+
+        // Caminho default conforme SO
+        var defaultPath = "";
+        if (osName.indexOf("win") >= 0) {
+            defaultPath = "C:/fluig/appserver/domain/servers/fluig1/log";
+        } else {
+            defaultPath = "/opt/fluig/appserver/domain/servers/fluig1/log";
+        }
+
+        // Se veio constraint PATH, usa ela
+        var folderPath = getConstraintValue(constraints, "PATH");
+        if (folderPath == null || folderPath === "") {
+            folderPath = defaultPath;
+        }
+
+        var File = java.io.File;
+        var folder = new File(folderPath);
+
+        if (!folder.exists() || !folder.isDirectory()) {
+            dataset.addRow(["", "Pasta não encontrada: " + folderPath, osName]);
+            return dataset;
+        }
+
+        // Data limite (5 dias atrás)
+        var Calendar = java.util.Calendar;
+        var cal = Calendar.getInstance();
+        cal.add(Calendar.DAY_OF_MONTH, -5);
+        var limitDate = cal.getTime();
+
+        var SimpleDateFormat = java.text.SimpleDateFormat;
+        var sdf = new SimpleDateFormat("yyyy-MM-dd");
+
+        var files = folder.listFiles();
+        for (var i = 0; i < files.length; i++) {
+            var file = files[i];
+            var name = file.getName();
+
+            // Padrão: *.log.YYYY-MM-DD
+            if (file.isFile() && name.indexOf(".log.") !== -1) {
+                try {
+                    var datePart = name.substring(name.lastIndexOf(".log.") + 5); // pega a data
+                    var fileDate = sdf.parse(datePart);
+
+                    if (fileDate.before(limitDate)) {
+                        var deleted = file["delete"]();
+                        dataset.addRow([name, deleted ? "Excluído" : "Erro ao excluir", osName]);
+                    }
+                } catch (e2) {
+                    dataset.addRow([name, "Erro ao processar data: " + e2, osName]);
+                }
+            }
+        }
+    } catch (e) {
+        dataset.addRow(["", "Erro: " + e, ""]);
+    }
+
+    return dataset;
+}
+
+function getConstraintValue(constraints, fieldName) {
+    if (constraints != null) {
+        for (var i = 0; i < constraints.length; i++) {
+            if (constraints[i].fieldName == fieldName) {
+                return constraints[i].initialValue;
+            }
+        }
+    }
+    return null;
+}
